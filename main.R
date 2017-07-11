@@ -46,7 +46,8 @@ save(train.prior.sample,file = 'train_prior_sample.rda')
 train.prior.sample.final <- train.prior.sample %>% group_by(user_id,product_id) %>% summarise(prod_count=n())
 train.prior.sample$day_part <- sapply(train.prior.sample$order_hour_of_day,day.part)
 train.prior.sample$weekend <- sapply(train.prior.sample$order_dow, is.weekend)
-
+train.prior.sample$days_since_prior_order[is.na(train.prior.sample$days_since_prior_order)] <-0
+a <- train.prior.sample %>% group_by(user_id,product_id) %>% order_by(order_number,cumsum(days_since_prior_order))
 
 # proposed training set columns
 # product_prob, aisle, dept, weekend, daypart, median_day_gap_between_order_for_this_product, num_of_total_product_purchased_by_customer

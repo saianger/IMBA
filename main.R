@@ -19,6 +19,43 @@ data <- orders %>%
   left_join(aisles,by="aisle_id") %>%
   left_join(dept,by="department_id")
 
+
+day.part <- function(x) {
+  if(x >= 6 & x < 12)
+  {return('M')}
+  else if(x >= 12 & x < 18)
+  {return('A')}
+  else if(x >=18 & x < 23)
+  {return('E')}
+  else
+  {return('O')}
+}
+
+is.weekend <- function(x){
+  if(x > 0 & x < 6 ) {return(0)}
+  else {return(1)}
+}
+
+# get all the orders for train users
+train.users <- data.frame(unique(orders[orders$eval_set == 'train',c('user_id')]))
+colnames(train.users) <- c('user_id')
+train.prior <- merge(train.users,data[data$eval_set == 'prior',])
+save(train.prior,file='train_prior.rda')
+train.prior.sample <- train.prior[train.prior$user_id %in% c(1,2,5),]
+save(train.prior.sample,file = 'train_prior_sample.rda')
+train.prior.sample.final <- train.prior.sample %>% group_by(user_id,product_id) %>% summarise(prod_count=n())
+train.prior.sample$day_part <- sapply(train.prior.sample$order_hour_of_day,day.part)
+train.prior.sample$weekend <- sapply(train.prior.sample$order_dow, is.weekend)
+
+
+# proposed training set columns
+# product_prob, aisle, dept, weekend, daypart, median_day_gap_between_order_for_this_product, num_of_total_product_purchased_by_customer
+
+# get latest train orders
+
+
+
+
 data.train <- data[data$eval_set == 'train',]
 data.prior <- data[data$eval_set == 'prior',]
 data.test <- data[data$eval_set == 'test',]

@@ -1,4 +1,6 @@
 library("dplyr")
+library("modeest")
+library(data.table)
 
 aisles <- read.csv('aisles.csv')
 head(aisles,5)
@@ -49,12 +51,27 @@ train.prior.sample.final <- train.prior.sample %>% group_by(user_id,product_id) 
 train.prior.sample$day_part <- sapply(train.prior.sample$order_hour_of_day,day.part)
 train.prior.sample$weekend <- sapply(train.prior.sample$order_dow, is.weekend)
 train.prior.sample$days_since_prior_order[is.na(train.prior.sample$days_since_prior_order)] <-0
-train.prior.sample <- train.prior.sample[order(user_id,order_number),]
 train.prior.sample <- train.prior.sample[order(train.prior.sample$user_id,train.prior.sample$order_number),]
-a <- train.prior.sample %>% group_by(user_id,product_id) %>% mutate(cumsum(days_since_prior_order))
+a <- unique(train.prior.sample[,c('user_id','order_number','days_since_prior_order')]) %>% group_by(user_id) %>% mutate(cumsum_days = cumsum(days_since_prior_order))
+b<- merge(train.prior.sample,a[,-3])
+c <- b %>% group_by(product_id,user_id) %>% mutate(day_gap = lag(cumsum_days), order_by=order_number)
+d <- b[order(b$user_id,b$product_id,b$order_number),]
+d.shift <- d[-nrow(d),c('user_id','product_id','cumsum_days')]
+d.shift <- rbind(d[1,c('user_id','product_id','cumsum_days')],d.shift)
+colnames(d.shift) <- c('user_id_s','product_id_s','cumsum_days_s')
+d.comb <- cbind(d,d.shift)
+d.comb$avg_prod_gap <- d.comb$cumsum_days - d.comb$cumsum_days_s
+d.comb[which(d.comb$user_id != d.comb$user_id_s | d.comb$product_id !=d.comb$product_id_s),c('avg_prod_gap')] <- NA
+d.comb <- d.comb[which(d.comb$avg_prod_gap != 0 & !is.na(d.comb$avg_prod_gap)),]
+e <- d.comb %>% group_by(user_id,product_id) %>% summarize(median_prod_day_gap = median(avg_prod_gap))
+#f <- d %>% group_by(user_id,product_id,day_part) %>% summarise(day_part_count = n()) %>% arrange(user_id, product_id,desc(day_part_count))
+# get the mode for day_part
+f <- d %>% group_by(user_id,product_id,day_part) %>% summarise(day_part_count = n())  %>% group_by(user_id, product_id) %>% filter(day_part_count == max(day_part_count))
+# get the mode for weekend
+g <- d %>% group_by(user_id,product_id,weekend) %>% summarise(weekend_count = n())  %>% group_by(user_id, product_id) %>% filter(weekend_count == max(weekend_count))
 
 # proposed training set columns
-# product_prob, aisle, dept, weekend, daypart, median_day_gap_between_order_for_this_product, num_of_total_product_purchased_by_customer
+# product_prob, aisle, dept, weekend, daypart, median_day_gap_between_order_for_this_product, num_of_median_total_product_purchased_by_customer
 
 # get latest train orders
 

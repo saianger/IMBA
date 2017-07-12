@@ -70,6 +70,7 @@ f <- d %>% group_by(user_id,product_id,day_part) %>% summarise(day_part_count = 
 # get the mode for weekend
 g <- d %>% group_by(user_id,product_id,weekend) %>% summarise(weekend_count = n())  %>% group_by(user_id, product_id) %>% filter(weekend_count == max(weekend_count))
 
+prod_prob.f <- d %>% group_by(product_id,user_id)  %>% summarise(prod_count=n())
 # proposed training set columns
 # product_prob, aisle, dept, weekend, daypart, median_day_gap_between_order_for_this_product, num_of_median_total_product_purchased_by_customer
 

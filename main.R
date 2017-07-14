@@ -40,14 +40,23 @@ is.weekend <- function(x){
   else {return(1)}
 }
 
+z.score.margin <- 2.1
+cart.order.down <- function(x){
+  if(x>z.score.margin) {return(1)}
+  else {return(0)}
+}
+
 # get all the orders for train users
 train.users <- data.frame(unique(orders[orders$eval_set == 'train',c('user_id')]))
 colnames(train.users) <- c('user_id')
-train.prior <- merge(train.users,data[data$eval_set == 'prior' | data$eval_set == 'train',])
+train.prior <- merge(train.users,data[data$eval_set == 'prior',])
+train.train <- merge(train.users,data[data$eval_set == 'train',])
 save(train.prior,file='train_prior.rda')
 train.prior.sample <- train.prior[train.prior$user_id %in% c(1,2,5),]
+train.train.sample <- train.train[train.train$user_id %in% c(1,2,5),]
 # enable full data to create feature matrix
 train.prior.sample <- train.prior
+train.train.sample <- train.train
 save(train.prior.sample,file = 'train_prior_sample.rda')
 #train.prior.sample.final <- train.prior.sample %>% group_by(user_id,product_id) %>% summarise(prod_count=n())
 train.prior.sample$day_part <- sapply(train.prior.sample$order_hour_of_day,day.part)
@@ -68,7 +77,7 @@ d.comb <- d.comb[which(d.comb$avg_prod_gap != 0 & !is.na(d.comb$avg_prod_gap)),]
 prod.day.gap.f <- d.comb %>% group_by(user_id,product_id) %>% summarize(median_prod_day_gap = round(median(avg_prod_gap)))
 #f <- d %>% group_by(user_id,product_id,day_part) %>% summarise(day_part_count = n()) %>% arrange(user_id, product_id,desc(day_part_count))
 # get the mode for day_part
-f <- d %>% group_by(user_id,product_id,day_part) %>% summarise(day_part_count = n())  %>% group_by(user_id, product_id) %>% filter(day_part_count == max(day_part_count), row_number(day_part_count) == 1)
+f <- d %>% group_by(user_id,product_id,day_part) %>% summarise(day_part_count = n())  %>% group_by(user_id, product_id) %>% filter(day_part_count == max(day_part_count)) %>% filter(row_number(day_part_count) == 1)
 # get the mode for weekend
 g <- d %>% group_by(user_id,product_id,weekend) %>% summarise(weekend_count = n())  %>% group_by(user_id, product_id) %>% filter(weekend_count == max(weekend_count))
 
@@ -82,6 +91,18 @@ prod.prob.f$prod_prob_rank <- round(prod.prob.f$prod_prob * 10)
 # get the num_of_median_total_product_purchased_by_customer_each_order
 prod.total.median.f <- d %>% group_by(user_id,order_id) %>% summarise(num_prod = n()) %>% group_by(user_id) %>%summarize(median_num_prod = round(median(num_prod)))
 
+# get the add to cart trend for last product purchase
+cart.stat <- d %>% group_by(user_id,product_id) %>% summarise(mean_cart_order=mean(add_to_cart_order),sd_cart_order=sd(add_to_cart_order))
+cart.stat <- cart.stat[which(!is.na(cart.stat$sd_cart_order)),]
+d.product.last.cart <- d %>% group_by(user_id,product_id) %>% filter(order_number == max(order_number)) %>% select(user_id,product_id,add_to_cart_order)
+cart.stat.full <- merge(d.product.last.cart,cart.stat)
+cart.stat.full$z_score <- (cart.stat.full$add_to_cart_order - cart.stat.full$mean_cart_order)/cart.stat.full$sd_cart_order
+cart.stat.full$z_score[is.na(cart.stat.full$z_score)] <- 0
+cart.stat.full$cart_order_down <- sapply(cart.stat.full$z_score,cart.order.down)
+cart.stat.full <- cart.stat.full[,c('user_id','product_id','cart_order_down')]
+
+
+
 
 # creating feature matrix
 feature.matrix.f <- merge(prod.day.gap.f,prod.prob.f)
@@ -90,6 +111,16 @@ feature.matrix.f <- merge(feature.matrix.f,g)
 feature.matrix.f <- merge(feature.matrix.f,prod.day.gap.f)
 feature.matrix.f <- merge(feature.matrix.f,prod.total.median.f)
 feature.matrix.f <- merge(feature.matrix.f,products)
+feature.matrix.f <- merge(feature.matrix.f,cart.stat.full)
+# get train target variables
+train.train.sample$bought <- 1
+#train.train.sample.dedup <- unique(train.train.sample[,c('user_id')])
+train.train.sample.dedup<- train.train.sample[!duplicated(train.train.sample[,c('user_id')]),]
+train.train.sample.dedup$day_part_recent <- sapply(train.train.sample.dedup$order_hour_of_day,day.part)
+train.train.sample.dedup$weekend_recent <- sapply(train.train.sample.dedup$order_dow, is.weekend)
+feature.matrix.f <- merge(feature.matrix.f,train.train.sample[,c('user_id','product_id','bought')],all.x = TRUE)
+feature.matrix.f <- merge(feature.matrix.f,train.train.sample.dedup[,c('user_id','day_part_recent','weekend_recent','days_since_prior_order')])
+
 
 # proposed training set columns
 # product_prob, aisle, dept, weekend, daypart, median_day_gap_between_order_for_this_product, num_of_median_total_product_purchased_by_customer_each_order

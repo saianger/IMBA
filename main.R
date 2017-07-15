@@ -51,13 +51,13 @@ train.users <- data.frame(unique(orders[orders$eval_set == 'train',c('user_id')]
 colnames(train.users) <- c('user_id')
 train.prior <- merge(train.users,data[data$eval_set == 'prior',])
 train.train <- merge(train.users,data[data$eval_set == 'train',])
-save(train.prior,file='train_prior.rda')
+#save(train.prior,file='train_prior.rda')
 train.prior.sample <- train.prior[train.prior$user_id %in% c(1,2,5),]
 train.train.sample <- train.train[train.train$user_id %in% c(1,2,5),]
 # enable full data to create feature matrix
 train.prior.sample <- train.prior
 train.train.sample <- train.train
-save(train.prior.sample,file = 'train_prior_sample.rda')
+#save(train.prior.sample,file = 'train_prior_sample.rda')
 #train.prior.sample.final <- train.prior.sample %>% group_by(user_id,product_id) %>% summarise(prod_count=n())
 train.prior.sample$day_part <- sapply(train.prior.sample$order_hour_of_day,day.part)
 train.prior.sample$weekend <- sapply(train.prior.sample$order_dow, is.weekend)
@@ -120,7 +120,20 @@ train.train.sample.dedup$day_part_recent <- sapply(train.train.sample.dedup$orde
 train.train.sample.dedup$weekend_recent <- sapply(train.train.sample.dedup$order_dow, is.weekend)
 feature.matrix.f <- merge(feature.matrix.f,train.train.sample[,c('user_id','product_id','bought')],all.x = TRUE)
 feature.matrix.f <- merge(feature.matrix.f,train.train.sample.dedup[,c('user_id','day_part_recent','weekend_recent','days_since_prior_order')])
-
+feature.matrix.f$bought[which(is.na(feature.matrix.f$bought))] <- 0
+feature.matrix.f.model <- feature.matrix.f[,c('product_id','median_prod_day_gap','prod_prob_rank','day_part','weekend','median_num_prod','aisle_id','department_id','cart_order_down','day_part_recent','weekend_recent','days_since_prior_order','bought')]
+str(feature.matrix.f.model)
+feature.matrix.f.model$product_id <- as.factor(feature.matrix.f.model$product_id)
+feature.matrix.f.model$aisle_id <- as.factor(feature.matrix.f.model$aisle_id)
+feature.matrix.f.model$department_id <- as.factor(feature.matrix.f.model$department_id)
+feature.matrix.f.model$bought <- as.factor(feature.matrix.f.model$bought)
+feature.matrix.f.model <- feature.matrix.f.model[,c('bought',  'median_prod_day_gap' , 'prod_prob_rank','day_part','weekend','median_num_prod' , 'aisle_id' ,'department_id' ,'cart_order_down', 'day_part_recent','weekend_recent','days_since_prior_order')]
+save(feature.matrix.f.model,file="featurematrix.rda")
+load(file="featurematrix.rda")
+library(randomForest)
+model <- randomForest(bought ~ median_prod_day_gap + prod_prob_rank+day_part+weekend+median_num_prod +department_id +cart_order_down+ day_part_recent+weekend_recent+days_since_prior_order,data=feature.matrix.f.model,importance=TRUE)
+require(xgboost)
+bstSparse <- xgboost(data = feature.matrix.f.model[,c('median_prod_day_gap' , 'prod_prob_rank','day_part','weekend','median_num_prod' , 'aisle_id' ,'department_id' ,'cart_order_down', 'day_part_recent','weekend_recent','days_since_prior_order')], label = feature.matrix.f.model$bought, max_depth = 15, objective = "binary:logistic")
 
 # proposed training set columns
 # product_prob, aisle, dept, weekend, daypart, median_day_gap_between_order_for_this_product, num_of_median_total_product_purchased_by_customer_each_order
@@ -142,7 +155,7 @@ head(data.prior)
 
 
 library(randomForest)
-model <- randomForest(as.factor(product_id) ~ order_dow + order_hour_of_day + days_since_prior_order+add_to_cart_order+reordered+aisle_id + department_id,data=data.prior.sample,importance=TRUE)
+model <- randomForest(bought ~ order_dow + order_hour_of_day + days_since_prior_order+add_to_cart_order+reordered+aisle_id + department_id,data=feature.matrix.f,importance=TRUE)
 
 model <- randomForest(as.factor(product_id) ~ order_dow + order_hour_of_day + days_since_prior_order+add_to_cart_order+reordered+aisle_id + department_id,data=data.prior,importance=TRUE)
 

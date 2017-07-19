@@ -223,7 +223,7 @@ library(randomForest)
 library(reshape2)
 final.result <- data.frame('user_id'=character(),'product_id'=character(),'test.predict.lable' = c(),'test.predict.prob'=c())
 #c("14","7","19","17","16","4","20","1","6","13","3","12","15","18","21","5","9","2","11","10","8" )
-for(i in c("14","7","19","17","16","4","20","1","6","13","3","12","15","18","21","5","9","2","11","10","8" )){
+for(i in c("20","1","6","13","3","12","15","18","21","5","9","2","11","10","8" )){
   print(i)
   temp.train <- feature.matrix.f.model[feature.matrix.f.model$department_id == i,]
   temp.test <- feature.matrix.f.model.test[feature.matrix.f.model.test$department_id == i,]
@@ -231,9 +231,9 @@ for(i in c("14","7","19","17","16","4","20","1","6","13","3","12","15","18","21"
   temp.train$aisle_id <- factor(temp.train$aisle_id)
   model <- NA
   if(i=='4'){
-    model1 <- randomForest(bought ~ median_prod_day_gap + prod_prob_rank+day_part+weekend+median_num_prod +aisle_id +cart_order_down+ day_part_recent+weekend_recent+days_since_prior_order,data=temp.train,ntree=100)
-    model2 <- randomForest(bought ~ median_prod_day_gap + prod_prob_rank+day_part+weekend+median_num_prod +aisle_id +cart_order_down+ day_part_recent+weekend_recent+days_since_prior_order,data=temp.train,ntree=100)
-    model3 <- randomForest(bought ~ median_prod_day_gap + prod_prob_rank+day_part+weekend+median_num_prod +aisle_id +cart_order_down+ day_part_recent+weekend_recent+days_since_prior_order,data=temp.train,ntree=100)
+    model1 <- randomForest(bought ~ median_prod_day_gap + prod_prob_rank+day_part+weekend+median_num_prod +aisle_id +cart_order_down+ day_part_recent+weekend_recent+days_since_prior_order,data=temp.train,ntree=100,norm.votes=FALSE)
+    model2 <- randomForest(bought ~ median_prod_day_gap + prod_prob_rank+day_part+weekend+median_num_prod +aisle_id +cart_order_down+ day_part_recent+weekend_recent+days_since_prior_order,data=temp.train,ntree=100,norm.votes=FALSE)
+    model3 <- randomForest(bought ~ median_prod_day_gap + prod_prob_rank+day_part+weekend+median_num_prod +aisle_id +cart_order_down+ day_part_recent+weekend_recent+days_since_prior_order,data=temp.train,ntree=100,norm.votes=FALSE)
     model <- combine(model1,model2,model3)
   }
   else{
@@ -253,10 +253,13 @@ load(file = "final_result.rda")
 #final.result <- final.result[which(final.result$test.predict == 1),]
 #final.result <- final.result[,c('user_id','product_id')]
 train.train.small <- train.train[,c('user_id','order_id')]
+final.result <- final.result[which(final.result$test.predict.lable == 1),c('user_id','product_id')]
 final.result1 <- merge(x = train.train.small, y = final.result, by = c("user_id"), all.x = TRUE)
 
 test <- aggregate(product_id ~ order_id, data = final.result1[,c('order_id','product_id')], paste, collapse = " ",na.action=na.pass)
-test1 <- merge(test, train.train[,c('order_id')], all.y = TRUE)
+test$product_id[which(test$product_id == 'NA')] <- 'None'
+#test1 <- merge(test, train.train[,c('order_id')], all.y = TRUE)
+colnames(test) <- c('order_id','products')
 write.table(test,file="final.csv",sep=",",row.names = FALSE,quote=FALSE)
 
 library(randomForest)

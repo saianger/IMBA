@@ -66,11 +66,12 @@ train.prior.sample <- train.prior.sample[order(train.prior.sample$user_id,train.
 a <- unique(train.prior.sample[,c('user_id','order_number','days_since_prior_order')]) %>% group_by(user_id) %>% mutate(cumsum_days = cumsum(days_since_prior_order))
 b<- merge(train.prior.sample,a[,-3])
 c <- b %>% group_by(product_id,user_id) %>% mutate(day_gap = lag(cumsum_days), order_by=order_number)
-d <- b[order(b$user_id,b$product_id,b$order_number),]
-d.shift <- d[-nrow(d),c('user_id','product_id','cumsum_days')]
+d <- b[order(b$user_id,b$product_id,b$order_number),] %>% group_by(user_id) %>% mutate(max_period = max(cumsum_days))
+d.shift <- d[-nrow(d),c('user_id','product_id','cumsum_days')] 
 d.shift <- rbind(d[1,c('user_id','product_id','cumsum_days')],d.shift)
 colnames(d.shift) <- c('user_id_s','product_id_s','cumsum_days_s')
 d.comb <- cbind(d,d.shift)
+test <- d.comb %>% group_by(user_id,product_id) %>% summarise(count_n = n()) %>% filter(count_n == 1)
 d.comb$avg_prod_gap <- d.comb$cumsum_days - d.comb$cumsum_days_s
 d.comb[which(d.comb$user_id != d.comb$user_id_s | d.comb$product_id !=d.comb$product_id_s),c('avg_prod_gap')] <- NA
 d.comb <- d.comb[which(d.comb$avg_prod_gap != 0 & !is.na(d.comb$avg_prod_gap)),]
@@ -261,6 +262,15 @@ test$product_id[which(test$product_id == 'NA')] <- 'None'
 #test1 <- merge(test, train.train[,c('order_id')], all.y = TRUE)
 colnames(test) <- c('order_id','products')
 write.table(test,file="final.csv",sep=",",row.names = FALSE,quote=FALSE)
+
+
+
+
+#### KNN model#######
+library(class)
+prc_test_pred <- knn(train = feature.matrix.f.model[,-1], test = feature.matrix.f.model.test[2,c(-1,-2)],cl = feature.matrix.f.model[,1], k=10)
+
+
 
 library(randomForest)
 model <- randomForest(bought ~ median_prod_day_gap + prod_prob_rank+day_part+weekend+median_num_prod +aisle_id +cart_order_down+ day_part_recent+weekend_recent+days_since_prior_order,data=data.dept,importance=TRUE)

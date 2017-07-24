@@ -105,11 +105,58 @@ data <- orders_products %>%
     up_last_order = max(order_number),
     up_average_cart_position = mean(add_to_cart_order))
 
+
+#orders_products <- orders_products[orders_products$user_id %in% c(1,2,5),]
+
+# get avg product purchase day gap ######
+orders_products$days_since_prior_order[is.na(orders_products$days_since_prior_order)] <-0
+orders_products <- orders_products[order(orders_products$user_id,orders_products$order_number),]
+orders_products_cum <- unique(orders_products[,c('user_id','order_number','days_since_prior_order')]) %>% group_by(user_id) %>% mutate(cumsum_days = cumsum(days_since_prior_order))
+orders_products_cum_full <- merge(orders_products,orders_products_cum[,-3])
+orders_products_cum_full <- orders_products_cum_full[order(orders_products_cum_full$user_id,orders_products_cum_full$product_id,orders_products_cum_full$order_number),] %>% group_by(user_id) %>% mutate(max_period = max(cumsum_days))
+orders_products_cum_full.shift <- orders_products_cum_full[-nrow(orders_products_cum_full),c('user_id','product_id','cumsum_days')] 
+orders_products_cum_full.shift <- rbind(orders_products_cum_full[1,c('user_id','product_id','cumsum_days')],orders_products_cum_full.shift)
+colnames(orders_products_cum_full.shift) <- c('user_id_s','product_id_s','cumsum_days_s')
+# get product day gap that only purchased once
+orders_products_cum_full.once <- orders_products_cum_full %>% group_by(user_id,product_id) %>% mutate(count_n = n()) %>% filter(count_n == 1)
+orders_products_cum_full.once.full <- orders_products_cum_full.once %>% inner_join(orders[orders$eval_set %in% c('train','test'),c('user_id','days_since_prior_order')], by = "user_id")
+orders_products_cum_full.once.full$avg_prod_gap <- ((orders_products_cum_full.once.full$max_period - orders_products_cum_full.once.full$days_since_prior_order.x) + orders_products_cum_full.once.full$days_since_prior_order.y) * 2
+prod.day.gap.f.once <- orders_products_cum_full.once.full[,c('user_id','product_id','avg_prod_gap')]
+# get product day gap that purchased more than once
+orders_products_cum_full.comb <- cbind(orders_products_cum_full,orders_products_cum_full.shift)
+orders_products_cum_full.comb$avg_prod_gap <- orders_products_cum_full.comb$cumsum_days - orders_products_cum_full.comb$cumsum_days_s
+orders_products_cum_full.comb <- orders_products_cum_full.comb[-1,]
+orders_products_cum_full.comb[which(orders_products_cum_full.comb$user_id != orders_products_cum_full.comb$user_id_s | orders_products_cum_full.comb$product_id !=orders_products_cum_full.comb$product_id_s),c('avg_prod_gap')] <- NA
+orders_products_cum_full.comb <- orders_products_cum_full.comb[which(!is.na(orders_products_cum_full.comb$avg_prod_gap)),]
+prod.day.gap.f <- orders_products_cum_full.comb %>% group_by(user_id,product_id) %>% summarize(median_prod_day_gap = round(mean(avg_prod_gap)))
+# combine both
+prod.day.gap.f <- rbind(prod.day.gap.f,prod.day.gap.f.once)
+
+
+# get the add to cart trend for last product purchase ######
+z.score.margin <- 2.1
+cart.order.down <- function(x){
+  if(x>z.score.margin) {return(1)}
+  else {return(0)}
+}
+cart.stat <- orders_products_cum_full %>% group_by(user_id,product_id) %>% summarise(mean_cart_order=mean(add_to_cart_order),sd_cart_order=sd(add_to_cart_order))
+cart.stat$sd_cart_order[which(is.na(cart.stat$sd_cart_order))] <- 0
+orders_products_cum_full.product.last.cart <- orders_products_cum_full %>% group_by(user_id,product_id) %>% filter(order_number == max(order_number)) %>% select(user_id,product_id,add_to_cart_order)
+cart.stat.full <- merge(orders_products_cum_full.product.last.cart,cart.stat)
+cart.stat.full$z_score <- (cart.stat.full$add_to_cart_order - cart.stat.full$mean_cart_order)/cart.stat.full$sd_cart_order
+cart.stat.full$z_score[is.na(cart.stat.full$z_score)] <- 0
+cart.stat.full$cart_order_down <- sapply(cart.stat.full$z_score,cart.order.down)
+cart.stat.full <- cart.stat.full[,c('user_id','product_id','cart_order_down')]
+
+
+
 rm(orders_products, orders)
 
 data <- data %>% 
   inner_join(prd, by = "product_id") %>%
-  inner_join(users, by = "user_id")
+  inner_join(users, by = "user_id") %>%
+  inner_join(prod.day.gap.f, by = c("user_id","product_id")) %>%
+  inner_join(cart.stat.full, by = c("user_id","product_id"))
 
 data$up_order_rate <- data$up_orders / data$user_orders
 data$up_orders_since_last_order <- data$user_orders - data$up_last_order

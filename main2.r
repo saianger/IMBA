@@ -128,7 +128,7 @@ orders_products_cum_full.comb$avg_prod_gap <- orders_products_cum_full.comb$cums
 orders_products_cum_full.comb <- orders_products_cum_full.comb[-1,]
 orders_products_cum_full.comb[which(orders_products_cum_full.comb$user_id != orders_products_cum_full.comb$user_id_s | orders_products_cum_full.comb$product_id !=orders_products_cum_full.comb$product_id_s),c('avg_prod_gap')] <- NA
 orders_products_cum_full.comb <- orders_products_cum_full.comb[which(!is.na(orders_products_cum_full.comb$avg_prod_gap)),]
-prod.day.gap.f <- orders_products_cum_full.comb %>% group_by(user_id,product_id) %>% summarize(median_prod_day_gap = round(mean(avg_prod_gap)))
+prod.day.gap.f <- orders_products_cum_full.comb %>% group_by(user_id,product_id) %>% summarize(avg_prod_gap = round(mean(avg_prod_gap)))
 # combine both
 prod.day.gap.f <- rbind(prod.day.gap.f,prod.day.gap.f.once)
 
@@ -160,7 +160,7 @@ data <- data %>%
 
 data$up_order_rate <- data$up_orders / data$user_orders
 data$up_orders_since_last_order <- data$user_orders - data$up_last_order
-#data$up_order_rate_since_first_order <- data$up_orders / (data$user_orders - data$up_first_order + 1)
+data$up_order_rate_since_first_order <- data$up_orders / (data$user_orders - data$up_first_order + 1)
 
 data <- data %>% 
   left_join(ordert %>% select(user_id, product_id, reordered), 
@@ -176,8 +176,9 @@ train$eval_set <- NULL
 train$user_id <- NULL
 train$product_id <- NULL
 train$order_id <- NULL
-train$reordered[is.na(train$reordered)] <- 0
 train$reordered[!is.na(train$reordered)] <- 1
+train$reordered[is.na(train$reordered)] <- 0
+
 
 test <- as.data.frame(data[data$eval_set == "test",])
 test$eval_set <- NULL
@@ -187,6 +188,20 @@ test$reordered <- NULL
 rm(data)
 gc()
 
+
+# Model randomforest --------------------------------------------
+library(randomForest)
+subtrain <- train %>% sample_frac(0.1)
+model <- randomForest(as.factor(reordered) ~ .,data=subtrain,importance=TRUE)
+
+
+
+
+
+# Model knn -----------------------------------------------------
+library(class)
+subtrain <- train %>% sample_frac(0.2)
+model <- knn(subtrain[,c(-21)],test[,c(-1,-23)],subtrain$reordered, k =10, prob=TRUE)
 
 # Model -------------------------------------------------------------------
 library(xgboost)
@@ -204,9 +219,10 @@ params <- list(
   "lambda"              = 10
 )
 
-subtrain <- train %>% sample_frac(0.1)
+subtrain <- train %>% sample_frac(0.2)
 X <- xgb.DMatrix(as.matrix(subtrain %>% select(-reordered)), label = subtrain$reordered)
 model <- xgboost(data = X, params = params, nrounds = 80)
+
 
 importance <- xgb.importance(colnames(X), model = model)
 xgb.ggplot.importance(importance)
